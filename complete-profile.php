@@ -31,10 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Hash the password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
 
-            // Update patient details without verification code
+            // Update patient details (fixed bind_param with 6 parameters)
             $stmt = $database->prepare("UPDATE patient SET ptel = ?, pdob = ?, psex = ?, age = ?, ppassword = ? WHERE pemail = ?");
-            $stmt->bind_param("sssds", $tele, $dob, $sex, $age, $hashed_password, $email);
+            $stmt->bind_param("sssiss", $tele, $dob, $sex, $age, $hashed_password, $email); // Corrected type string
             $stmt->execute();
+            $stmt->close();
 
             // Redirect to patient dashboard
             header("Location: patient/index.php");
@@ -92,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (password === "") {
                 document.getElementById("passwordError").innerText = "Password is required.";
                 valid = false;
-            } else if (password.length < 8) {
+            } else if (password.length < 😎 {
                 document.getElementById("passwordError").innerText = "Password must be at least 8 characters long.";
                 valid = false;
             }

@@ -12,20 +12,25 @@
 </head>
 <body>
     <?php
+    session_start();
+    date_default_timezone_set('Asia/Manila'); // Set timezone at the start
+
     // Google OAuth Integration
-    require_once 'vendor/autoload.php'; // Load Composer autoload
+    require_once 'vendor/autoload.php';
 
     $client = new Google_Client();
     try {
-        $client->setAuthConfig('client_secret.json'); // Path to your credentials file
+        $client->setAuthConfig('client_secret.json');
     } catch (Exception $e) {
         die("Error loading client_secret.json: " . $e->getMessage());
     }
     $client->addScope('email');
     $client->addScope('profile');
-    $client->setRedirectUri('http://localhost/Ginhawa/login.php'); // Adjust to your folder
+    $client->setRedirectUri('http://localhost/Ginhawa/login.php');
     $client->setAccessType('offline');
     $client->setPrompt('select_account consent');
+
+    $error = '';
 
     // Handle Google callback
     if (isset($_GET['code'])) {
@@ -37,19 +42,14 @@
                 $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Google login failed: Invalid token received.</label>';
             } else {
                 $client->setAccessToken($token);
-
-                // Get user info
                 $oauth = new Google_Service_Oauth2($client);
                 $userInfo = $oauth->userinfo->get();
                 $email = $userInfo->email;
                 $name = $userInfo->name;
                 $picture = $userInfo->picture;
 
-                // Start session and include database connection
-                session_start();
                 include("connection.php");
 
-                // Check if the user exists in webuser table
                 $stmt = $database->prepare("SELECT * FROM webuser WHERE email = ?");
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
@@ -64,49 +64,30 @@
                         $stmt->bind_param("s", $email);
                         $stmt->execute();
                         $checker = $stmt->get_result();
+                        $patient = $checker->fetch_assoc();
 
                         if ($checker->num_rows == 1) {
-                            $patient = $checker->fetch_assoc();
-                            // Check if patient is archived
                             if ($patient['archived'] == 1) {
                                 $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Your account has been archived. Please contact support.</label>';
                             } else {
-                                // Check if profile is complete
+                                $_SESSION['user'] = $email;
+                                $_SESSION['usertype'] = 'p';
+                                $_SESSION['username'] = explode(" ", $patient['pname'])[0];
+                                $_SESSION['google_picture'] = $picture;
+
                                 if (empty($patient['ptel']) || empty($patient['pdob']) || empty($patient['psex']) || empty($patient['age'])) {
-                                    $_SESSION['user'] = $email;
-                                    $_SESSION['usertype'] = 'p';
-                                    $_SESSION['username'] = explode(" ", $patient['pname'])[0];
-                                    $_SESSION['google_picture'] = $picture;
                                     header('Location: complete-profile.php');
-                                    exit;
+                                    exit();
                                 } else {
-                                    $_SESSION['user'] = $email;
-                                    $_SESSION['usertype'] = 'p';
-                                    $_SESSION['username'] = explode(" ", $patient['pname'])[0];
-                                    $_SESSION['google_picture'] = $picture;
                                     header('Location: patient/index.php');
-                                    exit;
+                                    exit();
                                 }
                             }
-                        } else {
-                            // Create patient record with minimal data
-                            $clientId = "CL" . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
-                            $stmt = $database->prepare("INSERT INTO patient (pemail, pname, pclientid) VALUES (?, ?, ?)");
-                            $stmt->bind_param("sss", $email, $name, $clientId);
-                            $stmt->execute();
-
-                            $_SESSION['user'] = $email;
-                            $_SESSION['usertype'] = 'p';
-                            $_SESSION['username'] = explode(" ", $name)[0];
-                            $_SESSION['google_picture'] = $picture;
-                            header('Location: complete-profile.php');
-                            exit;
                         }
                     } else {
                         $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Google login is only for patients</label>';
                     }
                 } else {
-                    // New user, add to webuser and patient tables
                     $stmt = $database->prepare("INSERT INTO webuser (email, usertype) VALUES (?, 'p')");
                     $stmt->bind_param("s", $email);
                     $stmt->execute();
@@ -121,24 +102,20 @@
                     $_SESSION['username'] = explode(" ", $name)[0];
                     $_SESSION['google_picture'] = $picture;
                     header('Location: complete-profile.php');
-                    exit;
+                    exit();
                 }
-                $stmt->close();
-                $database->close();
             }
         } catch (Exception $e) {
             $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Google login error: ' . htmlspecialchars($e->getMessage()) . '</label>';
         }
     } else {
-        // Initialize error variable if no Google callback
         $error = '<label for="promter" class="form-label"> </label>';
     }
 
-    // Generate Google login URL
     $googleLoginUrl = $client->createAuthUrl();
 
-    // Existing manual login logic
-    if ($_POST) {
+    // Manual login logic
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         include("connection.php");
         $email = $_POST['useremail'];
         $password = $_POST['userpassword'];
@@ -157,22 +134,21 @@
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
                 $checker = $stmt->get_result();
+                $patient = $checker->fetch_assoc();
 
                 if ($checker->num_rows == 1) {
-                    $patient = $checker->fetch_assoc();
-                    // Check if patient is archived
                     if ($patient['archived'] == 1) {
                         $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Your account has been archived. Please contact support.</label>';
                     } elseif ($patient['verification_code'] !== NULL) {
                         $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Please verify your account first.</label>';
                         header("Location: verify-account.php");
-                        exit;
+                        exit();
                     } elseif (password_verify($password, $patient['ppassword'])) {
                         $_SESSION['user'] = $email;
                         $_SESSION['usertype'] = 'p';
                         $_SESSION['username'] = explode(" ", $patient['pname'])[0];
-                        header('location: patient/index.php');
-                        exit;
+                        header('Location: patient/index.php');
+                        exit();
                     } else {
                         $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Invalid password</label>';
                     }
@@ -182,42 +158,39 @@
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
                 $checker = $stmt->get_result();
+                $admin = $checker->fetch_assoc();
 
-                if ($checker->num_rows == 1) {
-                    $admin = $checker->fetch_assoc();
-                    if (password_verify($password, $admin['apassword'])) {
-                        $_SESSION['user'] = $email;
-                        $_SESSION['usertype'] = 'a';
-                        header('location: admin/index.php');
-                        exit;
-                    } else {
-                        $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Invalid password</label>';
-                    }
+                if ($checker->num_rows == 1 && password_verify($password, $admin['apassword'])) {
+                    $_SESSION['user'] = $email;
+                    $_SESSION['usertype'] = 'a';
+                    header('Location: admin/index.php');
+                    exit();
+                } else {
+                    $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Invalid credentials</label>';
                 }
             } elseif ($utype == 'd') {
                 $stmt = $database->prepare("SELECT * FROM doctor WHERE docemail = ?");
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
                 $checker = $stmt->get_result();
+                $doctor = $checker->fetch_assoc();
 
-                if ($checker->num_rows == 1) {
-                    $doctor = $checker->fetch_assoc();
-                    if (password_verify($password, $doctor['docpassword'])) {
-                        $today = date('Y-m-d');
-                        $time_now = date('Y-m-d H:i:s');
+                if ($checker->num_rows == 1 && password_verify($password, $doctor['docpassword'])) {
+                    $today = date('Y-m-d');
+                    $time_now = date('Y-m-d H:i:s'); // e.g., "2025-04-01 15:16:00"
 
-                        $stmt_attendance = $database->prepare("INSERT INTO doctor_attendance (doctor_id, docemail, time_in, date) VALUES (?, ?, ?, ?)");
-                        $stmt_attendance->bind_param("isss", $doctor['docid'], $email, $time_now, $today);
-                        $stmt_attendance->execute();
-                        $stmt_attendance->close();
+                    $stmt_attendance = $database->prepare("INSERT INTO doctor_attendance (doctor_id, docemail, time_in, date) VALUES (?, ?, ?, ?)");
+                    $stmt_attendance->bind_param("isss", $doctor['docid'], $email, $time_now, $today);
+                    $stmt_attendance->execute();
+                    $stmt_attendance->close();
 
-                        $_SESSION['user'] = $email;
-                        $_SESSION['usertype'] = 'd';
-                        header('location: doctor/index.php');
-                        exit;
-                    } else {
-                        $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Invalid password</label>';
-                    }
+                    $_SESSION['user'] = $email;
+                    $_SESSION['usertype'] = 'd';
+                    $_SESSION['doctor_id'] = $doctor['docid']; // Store doctor_id in session
+                    header('Location: doctor/index.php');
+                    exit();
+                } else {
+                    $error = '<label for="promter" class="form-label" style="color:rgb(255, 62, 62);text-align:center;">Invalid credentials</label>';
                 }
             }
         } else {
@@ -226,16 +199,6 @@
 
         $stmt->close();
         $database->close();
-    }
-
-    // Reset session variables only if not already set by Google login
-    if (!isset($_SESSION['user'])) {
-        session_start();
-        $_SESSION["user"] = "";
-        $_SESSION["usertype"] = "";
-        date_default_timezone_set('Asia/Manila');
-        $date = date('Y-m-d');
-        $_SESSION["date"] = $date;
     }
     ?>
 
@@ -288,7 +251,6 @@
                         <input type="submit" value="Login" class="login-btn btn-primary btn">
                     </td>
                 </tr>
-                <!-- Add Google Login Button -->
                 <tr>
                     <td>
                         <br>
@@ -319,7 +281,7 @@
     <script>
         function togglePassword(fieldId) {
             const passwordField = document.getElementById(fieldId);
-            const checkbox = document.getElementById(fieldId === "userpassword" ? "showPassword" : fieldId === "newpassword" ? "showNewPassword" : "showConfirmPassword");
+            const checkbox = document.getElementById('showPassword');
             passwordField.type = checkbox.checked ? "text" : "password";
         }
     </script>
