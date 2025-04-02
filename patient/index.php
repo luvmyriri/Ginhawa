@@ -128,7 +128,7 @@
                                     <td>
                                         <h3>Welcome!</h3>
                                         <h1><?php echo $username; ?>.</h1>
-                                        <p>Haven't any idea about doctors? no problem let's jumping to 
+                                        <p>Haven't any idea about doctors? no problem let's jumping 
                                             <a href="doctors.php" class="non-style-link"><b>"All Doctors"</b></a> section or 
                                             <a href="schedule.php" class="non-style-link"><b>"Sessions"</b></a><br>
                                             Track your past and future appointments history.<br>
